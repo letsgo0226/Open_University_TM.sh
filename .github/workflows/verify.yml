@@ -1,0 +1,97 @@
+name: Open University Course TM
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [course-verify]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-university-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify shell and machine modes
+        run: |
+          sh -n Open_University_TM.sh
+          chmod +x Open_University_TM.sh
+          ./Open_University_TM.sh --self | python3 -c 'import json,sys;x=json.load(sys.stdin);assert x["MODE"]=="self" and x["REV"] and x["OPEN"] and not x["FINAL"]'
+          ./Open_University_TM.sh --spec | python3 -c 'import json,sys;x=json.load(sys.stdin);assert x["MODE"]=="spec" and len(x["HEADINGS"])==9 and x["OBJECTIVES"]=="5-8"'
+
+      - name: Verify deterministic course validator
+        run: |
+          cat > /tmp/course.md <<'EOF'
+          # Test Course
+
+          ## Course Profile
+          Audience, prerequisites, outcomes, schedule, assessment, integrity, accessibility and source policy.
+
+          ## Contents
+          1. Test Chapter
+
+          ## Chapter 1 - Test Chapter
+
+          ### Learning Objectives
+          - Define the test concept.
+          - Explain the test concept.
+          - Apply the test concept.
+          - Analyze the test concept.
+          - Evaluate the test concept.
+
+          ### Chapter Overview
+          Overview.
+
+          ### Key Terms
+          Test.
+
+          ### Main Text
+          Main text.
+
+          ### Learning Activity
+          Activity.
+
+          ### Self-Assessment
+          Questions.
+
+          ### Answer Key
+          Answers.
+
+          ### Chapter Summary
+          Summary.
+
+          ### References
+          [SOURCE NEEDED]
+
+          ## Course Review, Final Self-Assessment, Glossary and General References
+          Review, assessment, answer key, revision plan, glossary and references.
+          EOF
+          MIN_CHARS_PER_CREDIT=1 MAX_CHARS_PER_CREDIT=1000000 ./Open_University_TM.sh --validate /tmp/course.md 1 1 > /tmp/result.json
+          cat /tmp/result.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/result.json'))
+          assert x['STRUCTURAL_RESIDUAL']==0
+          assert x['STATE']=='G' and x['FORMAT'] and x['OBJECTIVES'] and x['COURSE_SHELL'] and x['LENGTH_OK'] and x['REV']
+          assert x['ACADEMIC_RESIDUAL']==1 and not x['PUBLISHABLE']
+          PY
+
+      - name: Verify repository policy files
+        run: |
+          test -s COURSE_STANDARD.md
+          test -s README.md
+          test -s sources/bibliography.txt
+          grep -q 'OPEN=true' README.md
+          grep -q 'FINAL=false' README.md
