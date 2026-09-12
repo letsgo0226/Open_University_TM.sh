@@ -1,0 +1,6 @@
+# Add one verified bibliographic source per non-comment line.
+# Example format:
+# Immanuel Kant. Critique of Pure Reason. 1781/1787.
+#
+# The generator will expose real entries to the AI as [SRC:1], [SRC:2], ...
+# and will reject citation IDs that do not exist in this file.
