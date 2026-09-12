@@ -1,46 +1,16 @@
 # Open_University_TM.sh
 
-A zero-residual generator and validator for AI-assisted, self-study distance-learning course materials.
+A **sub-2 KB one-line** AI-assisted correspondence-course generator with zero-residual structural and source checks.
 
-The project turns a topic into a structured correspondence-course manuscript, validates its mechanical course specification, tracks source grounding separately from format compliance, and writes the result atomically only after the structural checks pass.
+The main file `Open_University_TM.sh` is intentionally compressed to one physical line and must remain `<2048` bytes. GitHub Actions verifies both constraints on every push, pull request, manual run, repository dispatch, and every five minutes.
 
-## Design
-
-The generator follows this pipeline:
+## Model
 
 ```text
-TOPIC
-  -> CURRICULUM
-  -> COURSE PROFILE
-  -> CHAPTERS
-  -> LEARNING OBJECTIVES
-  -> ACTIVITIES
-  -> SELF-ASSESSMENT
-  -> ANSWER KEY
-  -> SOURCE CHECK
-  -> VALIDATION
-  -> ATOMIC WRITE
+TOPIC -> OUTLINE -> COURSE PROFILE -> CHAPTERS -> ASSESSMENT -> SOURCE CHECK -> ZERO RESIDUAL -> ATOMIC PUBLISH
 ```
 
-Its core acceptance idea is a zero-residual specification:
-
-```text
-STRUCTURAL_RESIDUAL = 0
-```
-
-for mechanically verified course structure. Source grounding is deliberately tracked as a separate quantity:
-
-```text
-ACADEMIC_RESIDUAL = 0
-```
-
-only when a verified source pack exists, every `[SRC:n]` citation refers to that pack, and no `[SOURCE NEEDED]` marker remains.
-
-This separation matters: a perfectly formatted AI manuscript is not automatically academically verified.
-
-## Course structure
-
-Every generated chapter must contain each of these sections exactly once, in order:
+Each chapter is required to contain exactly these nine headings:
 
 1. Learning Objectives
 2. Chapter Overview
@@ -52,132 +22,91 @@ Every generated chapter must contain each of these sections exactly once, in ord
 8. Chapter Summary
 9. References
 
-Each chapter must contain 5-8 measurable learning objectives. The whole course also includes a Course Profile, Contents, and an end-of-course review with final self-assessment, explanatory answers, revision plan, glossary, and general references.
+The prompt requires 5-8 measurable objectives per chapter, aligned assessment and answers, plus a course profile and final review material.
 
-The default length envelope is 50,000-90,000 characters per credit. It can be changed with `MIN_CHARS_PER_CREDIT` and `MAX_CHARS_PER_CREDIT`.
+The compact validator emits JSON such as:
 
-## Requirements
+```json
+{"R":0,"STRUCTURE":true,"SOURCES":true}
+```
 
-- POSIX shell
-- Python 3
-- an AI command that accepts the prompt on standard input and writes the answer to standard output
+`R=0` means both the structural check and source check pass. The target file is written only after this zero-residual condition; writing uses a temporary file followed by `os.replace()`.
 
-The default AI command is:
+## AI backend
+
+The default backend is:
 
 ```bash
 ollama run qwen2.5:7b
 ```
 
-You can replace it through the `AI` environment variable.
-
-## Usage
-
-```bash
-chmod +x Open_University_TM.sh
-
-./Open_University_TM.sh \
-  "Introduction to Philosophy" \
-  philosophy_course.md \
-  12 \
-  2
-```
-
-Arguments are:
+If `ollama` is not installed, the program now exits cleanly with a message such as:
 
 ```text
-TOPIC OUTPUT_FILE CHAPTERS CREDITS
+AI_FAIL:/bin/sh: 1: ollama: not found
 ```
 
-Defaults are:
+instead of producing a Python traceback.
 
-```text
-Professional Philosophy course.md 12 2
-```
-
-### Another model
+You can use any command that reads a prompt from standard input and writes its answer to standard output:
 
 ```bash
-AI="ollama run llama3.1:8b" \
-./Open_University_TM.sh "Logic" logic.md 12 2
+AI="ollama run llama3.1:8b" sh Open_University_TM.sh "Logic" logic.md 12
 ```
 
-### Source-grounded mode
+or set `AI` to another local/API-backed CLI wrapper.
 
-Place one verified bibliographic source per non-comment line in:
+## Verified source pack
+
+Put one verified bibliographic source per non-comment line in:
 
 ```text
 sources/bibliography.txt
 ```
 
-or point `SOURCE_PACK` to another file:
+or choose another file:
 
 ```bash
-SOURCE_PACK=my_sources.txt \
-STRICT_SOURCES=1 \
-./Open_University_TM.sh "Ethics" ethics.md 12 2
+SOURCE_PACK=my_sources.txt AI="ollama run qwen2.5:7b" \
+sh Open_University_TM.sh "Ethics" ethics.md 12
 ```
 
-The model is instructed to cite only exact markers such as `[SRC:1]`. The validator rejects citation IDs that do not exist in the source pack. Unsupported factual claims must remain marked `[SOURCE NEEDED]`.
+The model may cite only `[SRC:n]` identifiers from that pack. Invalid source identifiers or any remaining `[SOURCE NEEDED]` marker make the source residual nonzero. The compact edition deliberately requires a nonempty source pack before publication.
 
-`STRICT_SOURCES=1` prevents writing the course unless the academic residual is also zero. Without strict mode, a structurally valid but incompletely sourced manuscript is written as `DRAFT`, not `PUBLISHABLE`.
+This is a mechanical integrity check, not proof that every citation semantically entails every sentence. Expert review is still appropriate for accredited or high-stakes education.
 
-This is a mechanical citation-integrity check; it does not prove that a cited source semantically entails every sentence. Expert review is still appropriate for high-stakes or accredited use.
-
-## Validation-only mode
-
-An existing course can be checked without invoking AI:
+## Usage
 
 ```bash
-./Open_University_TM.sh --validate course.md 12 2
+sh Open_University_TM.sh "Introduction to Philosophy" philosophy.md 12
 ```
 
-It reports compact JSON including:
+Arguments are:
 
 ```text
-STRUCTURAL_RESIDUAL
-ACADEMIC_RESIDUAL
-FORMAT
-OBJECTIVES
-LENGTH_OK
-SOURCE_GROUNDED
-PUBLISHABLE
+TOPIC OUTPUT_FILE CHAPTERS
 ```
 
-## Machine modes
-
-```bash
-./Open_University_TM.sh --self
-./Open_University_TM.sh --spec
-```
-
-`--self` verifies the reversible sentinel-byte integer encoding used by the model kernel. `--spec` emits the currently enforced course-section specification.
-
-## Output
-
-A successful structural generation writes:
+Defaults are:
 
 ```text
-course.md
-course.md.manifest.json
+Philosophy course.md 12
 ```
 
-The manifest records validation results. Writes are atomic, so a structurally failed generation does not replace the target course file.
+## CI
 
-## Educational interpretation
+`.github/workflows/verify.yml` checks:
 
-This repository is intended as open infrastructure for AI-assisted independent study. It can help anyone with access to a compatible AI model generate a structured course manuscript, but it does **not** itself confer university credit, accreditation, instructor supervision, or guaranteed factual correctness.
+- the main program is one physical line;
+- its byte size is `<2048`;
+- shell syntax is valid;
+- a missing AI executable fails cleanly without a traceback;
+- a deterministic mock AI can generate a one-chapter zero-residual course;
+- repository policy/source files remain present.
 
-A useful deployment model is:
+## Scope
 
-```text
-open source generator
-+ verified source pack
-+ user-selected AI
-+ automated structural validation
-+ human/academic review when required
-```
-
-The system remains explicitly open-ended:
+This repository provides open infrastructure for AI-assisted independent study. It does not itself confer university credit, accreditation, instructor supervision, or guaranteed factual correctness.
 
 ```text
 OPEN=true
