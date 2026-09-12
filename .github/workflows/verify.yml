@@ -23,71 +23,50 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify shell and machine modes
+      - name: Verify sub-2KB one-liner
         run: |
+          bytes=$(wc -c < Open_University_TM.sh)
+          lines=$(wc -l < Open_University_TM.sh)
+          echo "bytes=$bytes lines=$lines"
+          test "$bytes" -lt 2048
+          test "$lines" -eq 1
           sh -n Open_University_TM.sh
-          chmod +x Open_University_TM.sh
-          ./Open_University_TM.sh --self | python3 -c 'import json,sys;x=json.load(sys.stdin);assert x["MODE"]=="self" and x["REV"] and x["OPEN"] and not x["FINAL"]'
-          ./Open_University_TM.sh --spec | python3 -c 'import json,sys;x=json.load(sys.stdin);assert x["MODE"]=="spec" and len(x["HEADINGS"])==9 and x["OBJECTIVES"]=="5-8"'
-
-      - name: Verify deterministic course validator
+      - name: Verify clean missing-backend failure
         run: |
-          cat > /tmp/course.md <<'EOF'
-          # Test Course
-
-          ## Course Profile
-          Audience, prerequisites, outcomes, schedule, assessment, integrity, accessibility and source policy.
-
-          ## Contents
-          1. Test Chapter
-
-          ## Chapter 1 - Test Chapter
-
-          ### Learning Objectives
-          - Define the test concept.
-          - Explain the test concept.
-          - Apply the test concept.
-          - Analyze the test concept.
-          - Evaluate the test concept.
-
-          ### Chapter Overview
-          Overview.
-
-          ### Key Terms
-          Test.
-
-          ### Main Text
-          Main text.
-
-          ### Learning Activity
-          Activity.
-
-          ### Self-Assessment
-          Questions.
-
-          ### Answer Key
-          Answers.
-
-          ### Chapter Summary
-          Summary.
-
-          ### References
-          [SOURCE NEEDED]
-
-          ## Course Review, Final Self-Assessment, Glossary and General References
-          Review, assessment, answer key, revision plan, glossary and references.
-          EOF
-          MIN_CHARS_PER_CREDIT=1 MAX_CHARS_PER_CREDIT=1000000 ./Open_University_TM.sh --validate /tmp/course.md 1 1 > /tmp/result.json
-          cat /tmp/result.json
+          set +e
+          AI='command_that_does_not_exist_ou_tm' sh Open_University_TM.sh Test /tmp/x.md 1 >/tmp/out 2>/tmp/err
+          code=$?
+          set -e
+          test "$code" -ne 0
+          grep -q '^AI_FAIL:' /tmp/err
+          ! grep -q 'Traceback' /tmp/err
+      - name: Verify zero-residual generation with mock AI
+        run: |
+          printf '%s\n' 'Verified CI source' > /tmp/sources.txt
+          cat > /tmp/mockai <<'PY'
+          #!/usr/bin/env python3
+          import sys
+          p=sys.stdin.read()
+          if 'Return exactly' in p: print('1. Test Chapter')
+          elif 'Write chapter' in p:
+              hs=['Learning Objectives','Chapter Overview','Key Terms','Main Text','Learning Activity','Self-Assessment','Answer Key','Chapter Summary','References']
+              for h in hs:
+                  print('### '+h)
+                  if h=='Learning Objectives': print('\n'.join('- Objective '+str(i) for i in range(1,6)))
+                  elif h=='Main Text': print('[SRC:1] '+'x'*6500)
+                  else: print('[SRC:1] Test')
+          elif 'Write audience' in p: print('[SRC:1] Course profile')
+          else: print('[SRC:1] Final review')
+          PY
+          chmod +x /tmp/mockai
+          AI=/tmp/mockai SOURCE_PACK=/tmp/sources.txt sh Open_University_TM.sh Test /tmp/course.md 1 > /tmp/result.json
           python3 - <<'PY'
           import json
           x=json.load(open('/tmp/result.json'))
-          assert x['STRUCTURAL_RESIDUAL']==0
-          assert x['STATE']=='G' and x['FORMAT'] and x['OBJECTIVES'] and x['COURSE_SHELL'] and x['LENGTH_OK'] and x['REV']
-          assert x['ACADEMIC_RESIDUAL']==1 and not x['PUBLISHABLE']
+          assert x['R']==0 and x['STRUCTURE'] and x['SOURCES']
+          s=open('/tmp/course.md').read()
+          assert s.count('## Chapter ')==1 and '[SRC:1]' in s
           PY
-
       - name: Verify repository policy files
         run: |
           test -s COURSE_STANDARD.md
