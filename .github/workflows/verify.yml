@@ -65,7 +65,7 @@ jobs:
           x=json.load(open('/tmp/result.json'))
           assert x['R']==0 and x['STRUCTURE'] and x['SOURCES']
           s=open('/tmp/course.md').read()
-          assert s.count('## Chapter ')==1 and '[SRC:1]' in s
+          assert sum(line.startswith('## Chapter ') for line in s.splitlines())==1 and '[SRC:1]' in s
           PY
       - name: Verify repository policy files
         run: |
