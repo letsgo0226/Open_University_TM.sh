@@ -31,42 +31,34 @@ jobs:
           test "$bytes" -lt 2048
           test "$lines" -eq 1
           sh -n Open_University_TM.sh
-      - name: Verify clean missing-backend failure
+      - name: Verify no-AI total fallback
         run: |
-          set +e
-          AI='command_that_does_not_exist_ou_tm' sh Open_University_TM.sh Test /tmp/x.md 1 >/tmp/out 2>/tmp/err
-          code=$?
-          set -e
-          test "$code" -ne 0
-          grep -q '^AI_FAIL:' /tmp/err
-          ! grep -q 'Traceback' /tmp/err
-      - name: Verify zero-residual generation with mock AI
-        run: |
-          printf '%s\n' 'Verified CI source' > /tmp/sources.txt
-          cat > /tmp/mockai <<'PY'
-          #!/usr/bin/env python3
-          import sys
-          p=sys.stdin.read()
-          if 'Return exactly' in p: print('1. Test Chapter')
-          elif 'Write chapter' in p:
-              hs=['Learning Objectives','Chapter Overview','Key Terms','Main Text','Learning Activity','Self-Assessment','Answer Key','Chapter Summary','References']
-              for h in hs:
-                  print('### '+h)
-                  if h=='Learning Objectives': print('\n'.join('- Objective '+str(i) for i in range(1,6)))
-                  elif h=='Main Text': print('[SRC:1] '+'x'*6500)
-                  else: print('[SRC:1] Test')
-          elif 'Write audience' in p: print('[SRC:1] Course profile')
-          else: print('[SRC:1] Final review')
-          PY
-          chmod +x /tmp/mockai
-          AI=/tmp/mockai SOURCE_PACK=/tmp/sources.txt sh Open_University_TM.sh Test /tmp/course.md 1 > /tmp/result.json
+          env -u AI sh Open_University_TM.sh Logic /tmp/offline.md 2 > /tmp/offline.json
           python3 - <<'PY'
           import json
-          x=json.load(open('/tmp/result.json'))
-          assert x['R']==0 and x['STRUCTURE'] and x['SOURCES']
-          s=open('/tmp/course.md').read()
-          assert sum(line.startswith('## Chapter ') for line in s.splitlines())==1 and '[SRC:1]' in s
+          x=json.load(open('/tmp/offline.json'));s=open('/tmp/offline.md').read()
+          assert x['R']==0 and x['MODE']=='fallback'
+          assert sum(a.startswith('## Chapter ') for a in s.splitlines())==2
+          for h in ['Learning Objectives','Chapter Overview','Key Terms','Main Text','Learning Activity','Self-Assessment','Answer Key','Chapter Summary','References']:
+              assert s.count('### '+h)==2
+          assert 'Offline framework:' in s
           PY
+      - name: Verify broken AI falls back to a course
+        run: |
+          AI='command_that_does_not_exist_ou_tm' sh Open_University_TM.sh Ethics /tmp/broken.md 1 > /tmp/broken.json 2>/tmp/err
+          test -s /tmp/broken.md
+          ! grep -q Traceback /tmp/err
+          grep -q 'Offline framework:' /tmp/broken.md
+      - name: Verify optional AI enrichment
+        run: |
+          cat > /tmp/mockai <<'PY'
+          #!/usr/bin/env python3
+          print('AI-enriched lesson: definitions, arguments, objections, evidence, and replies.')
+          PY
+          chmod +x /tmp/mockai
+          AI=/tmp/mockai sh Open_University_TM.sh Test /tmp/ai.md 1 > /tmp/ai.json
+          grep -q 'AI-enriched lesson:' /tmp/ai.md
+          python3 -c 'import json;x=json.load(open("/tmp/ai.json"));assert x["R"]==0'
       - name: Verify repository policy files
         run: |
           test -s COURSE_STANDARD.md
